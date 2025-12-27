@@ -1,0 +1,11 @@
+.gradle/
+build/
+
+out/
+.project
+.settings
+.classpath
+
+bin/
+*.class
+hs_err_pid*
