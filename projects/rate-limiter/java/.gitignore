@@ -9,3 +9,4 @@ out/
 bin/
 *.class
 hs_err_pid*
+.jqwik-database
