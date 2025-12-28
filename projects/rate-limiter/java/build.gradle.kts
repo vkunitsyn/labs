@@ -1,5 +1,6 @@
 plugins {
     application
+    id("com.diffplug.spotless") version "8.1.0"
 }
 
 group = "io.github.vkunitsyn"
@@ -25,6 +26,31 @@ tasks.test {
         showStackTraces = true
     }
     useJUnitPlatform()
+}
+
+spotless {
+    java {
+        // googleJavaFormat("1.33.0")
+        trimTrailingWhitespace()
+        palantirJavaFormat()
+        endWithNewline()
+        target("src/**/*.java")
+    }
+
+    kotlinGradle {
+        ktlint()
+    }
+
+    format("misc") {
+        target(
+            "*.md",
+            ".gitignore",
+            ".gitattributes",
+            ".editorconfig",
+        )
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
 }
 
 application {
