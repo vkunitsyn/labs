@@ -41,9 +41,9 @@ Each language implementation is fully independent:
 
 ## Projects
 
-- **Rate limiter**
-  Token Bucket and Spacing (Leaky) Bucket implementations with tests
-  `projects/rate-limiter/java`
+- **Rate limiter**:
+Token Bucket and Spacing (Leaky) Bucket implementations with tests
+→ [Java implementation](projects/rate-limiter/java)
 
 ---
 

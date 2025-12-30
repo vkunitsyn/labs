@@ -1,3 +1,4 @@
+[![Java RateLimiter CI](https://github.com/vkunitsyn/labs/actions/workflows/rate-limiter-java.yml/badge.svg)](https://github.com/vkunitsyn/labs/actions/workflows/rate-limiter-java.yml)
 # Rate Limiter (Java)
 
 This project is a small Java exploration of rate limiting techniques,
