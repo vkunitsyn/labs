@@ -17,17 +17,6 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-tasks.test {
-    testLogging {
-        events("passed", "skipped", "failed")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-        showExceptions = true
-        showCauses = true
-        showStackTraces = true
-    }
-    useJUnitPlatform()
-}
-
 spotless {
     java {
         // googleJavaFormat("1.33.0")
@@ -51,6 +40,21 @@ spotless {
         trimTrailingWhitespace()
         endWithNewline()
     }
+}
+
+tasks.check {
+    dependsOn(tasks.spotlessCheck)
+}
+
+tasks.test {
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
+    }
+    useJUnitPlatform()
 }
 
 application {
