@@ -13,6 +13,7 @@ public class TokenBucket implements RateLimiter {
         this.refillTokens = refillTokens;
         this.refillPeriodNanos = refillPeriodNanos;
         this.availableTokens = capacity;
+        this.lastRefillNanos = Long.MIN_VALUE;
     }
 
     @Override
@@ -24,7 +25,7 @@ public class TokenBucket implements RateLimiter {
             availableTokens -= permits;
             return new AcquireResult.Acquired(permits);
         }
-        return new AcquireResult.Rejected(retryAfterNanos(nowNanos, permits));
+        return new AcquireResult.Rejected(retryAfterNanosInternal(nowNanos, permits));
     }
 
     @Override
@@ -47,7 +48,13 @@ public class TokenBucket implements RateLimiter {
         }
 
         long periodsNeeded = Math.ceilDiv(missingTokens, refillTokens);
-        return Utils.saturatedMultiply(periodsNeeded, refillPeriodNanos);
+        long fullRefillPeriodNanos = Utils.saturatedMultiply(periodsNeeded, refillPeriodNanos);
+        long fullRefillTimeNanos = Utils.saturatedAdd(lastRefillNanos, fullRefillPeriodNanos);
+
+        if (fullRefillTimeNanos <= nowNanos) {
+            return 0;
+        }
+        return fullRefillTimeNanos - nowNanos;
     }
 
     private void validatePermits(long permits) {
@@ -60,7 +67,7 @@ public class TokenBucket implements RateLimiter {
     }
 
     private void refillTokens(long nowNanos) {
-        if (lastRefillNanos == 0) {
+        if (lastRefillNanos == Long.MIN_VALUE) {
             lastRefillNanos = nowNanos;
             return;
         }
@@ -70,18 +77,20 @@ public class TokenBucket implements RateLimiter {
 
         long elapsedNanos = nowNanos - lastRefillNanos;
         long periods = elapsedNanos / refillPeriodNanos;
-        lastRefillNanos += periods * refillPeriodNanos;
+        if (periods == 0) {
+            return;
+        }
 
-        if (periods > (Long.MAX_VALUE / refillTokens)) {
+        long refillAdvanceNanos = Utils.saturatedMultiply(periods, refillPeriodNanos);
+        lastRefillNanos = Utils.saturatedAdd(lastRefillNanos, refillAdvanceNanos);
+
+        long tokensToAdd = Utils.saturatedMultiply(periods, refillTokens);
+        if (tokensToAdd == Long.MAX_VALUE) {
             availableTokens = capacity;
             return;
         }
 
-        long tokensToAdd = periods * refillTokens;
-        long newTokens = availableTokens + tokensToAdd;
-        if (newTokens < availableTokens) {
-            newTokens = Long.MAX_VALUE;
-        }
+        long newTokens = Utils.saturatedAdd(availableTokens, tokensToAdd);
         availableTokens = Math.min(capacity, newTokens);
     }
 
