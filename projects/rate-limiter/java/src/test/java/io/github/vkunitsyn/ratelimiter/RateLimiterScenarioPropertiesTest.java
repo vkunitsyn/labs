@@ -73,6 +73,12 @@ class RateLimiterScenarioPropertiesTest {
         runScenarioAndAssertInvariants("SpacingLeakyBucket", limiter, steps, CAPACITY);
     }
 
+    @Property(tries = 200)
+    void fixedWindowCounter_scenarios_hold_invariants(@ForAll("scenarios") List<Step> steps) {
+        RateLimiter limiter = new FixedWindowCounter(CAPACITY, PERIOD_NANOS);
+        runScenarioAndAssertInvariants("FixedWindowCounter", limiter, steps, CAPACITY);
+    }
+
     /**
      * The core scenario runner.
      *
