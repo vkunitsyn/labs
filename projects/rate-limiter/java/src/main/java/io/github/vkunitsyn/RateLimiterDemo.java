@@ -1,27 +1,42 @@
 package io.github.vkunitsyn;
 
+import io.github.vkunitsyn.ratelimiter.FixedWindowCounter;
 import io.github.vkunitsyn.ratelimiter.RateLimiter;
-import io.github.vkunitsyn.ratelimiter.TokenBucket;
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class RateLimiterDemo {
 
     public static void main(String[] args) throws Exception {
-        RateLimiter limiter = new TokenBucket(
-                10, // capacity
-                1, // refillTokens
-                Duration.ofMillis(100).toNanos() // refillPeriod => 10 tokens/sec
-                );
+        // When true, we behave like a polite client: respect retryAfter() (e.g., HTTP 429 Retry-After).
+        // When false, we behave like a load generator: always attempt at targetQps, ignoring retryAfter.
+        boolean respectRetryAfter = true;
+        for (String arg : args) {
+            if ("--hammer".equals(arg) || "--ignore-retry-after".equals(arg)) {
+                respectRetryAfter = false;
+            }
+        }
 
-        // RateLimiter limiter = new SpacingLeakyBucket(
-        // 10, // maxBurst
-        // Duration.ofMillis(100).toNanos() // interval => 10 permits/sec
+        RateLimiter limiter;
+        // limiter = new TokenBucket(
+        // 10, // capacity
+        // 1, // refillTokens
+        // Duration.ofMillis(100).toNanos() // refillPeriod => 10 tokens/sec
         // );
+
+        // limiter = new SpacingLeakyBucket(
+        //         10, // maxBurst
+        //         Duration.ofMillis(100).toNanos() // interval => 10 permits/sec
+        // );
+
+        limiter = new FixedWindowCounter(
+                10, // rate
+                Duration.ofMillis(1000).toNanos() // window => 10 permits/sec
+                );
 
         burstDemo(limiter);
         System.out.println();
-        steadyDemo(limiter, 50, Duration.ofSeconds(5)); // 50 qps for 5s
+        steadyDemo(limiter, 50, Duration.ofSeconds(5), respectRetryAfter); // 50 qps for 5s
     }
 
     private static void burstDemo(RateLimiter limiter) {
@@ -49,7 +64,9 @@ public final class RateLimiterDemo {
         if (reject > 0) System.out.println("maxRetryAfter=" + maxRetry + "ns");
     }
 
-    private static void steadyDemo(RateLimiter limiter, int qps, Duration duration) throws InterruptedException {
+    private static void steadyDemo(RateLimiter limiter, int qps, Duration duration, boolean respectRetryAfter)
+            throws InterruptedException {
+
         long permits = 1;
         long intervalNanos = 1_000_000_000L / Math.max(1, qps);
 
@@ -60,6 +77,7 @@ public final class RateLimiterDemo {
         long totalSleepNanos = 0;
 
         System.out.println("== steadyDemo ==");
+        System.out.println("clientMode=" + (respectRetryAfter ? "POLITE" : "HAMMER"));
         System.out.println("targetQps=" + qps + " duration=" + duration);
 
         long nextAttempt = start;
@@ -75,7 +93,7 @@ public final class RateLimiterDemo {
                 continue;
             }
 
-            // we avoid drifting by basing next attempt on max of now and scheduled time
+            // avoid drifting by basing next attempt on max of now and scheduled time
             long base = Math.max(now, nextAttempt);
 
             RateLimiter.AcquireResult r = limiter.tryAcquire(now, permits);
@@ -83,15 +101,20 @@ public final class RateLimiterDemo {
                 ok++;
                 // introduce some jitter for every 32 successful acquires
                 long jitter = (ok & 31) == 0 ? ThreadLocalRandom.current().nextInt(50_000) : 0;
-
                 nextAttempt = base + intervalNanos + jitter;
             } else {
                 reject++;
-                long backoff = r.retryAfterNanos();
-                long afterBackoff = base + Math.max(0, backoff);
                 long afterDesired = base + intervalNanos;
-                // respect both rate limiter backoff and desired rate
-                nextAttempt = Math.max(afterDesired, afterBackoff);
+
+                if (respectRetryAfter) {
+                    long backoff = r.retryAfterNanos();
+                    long afterBackoff = base + Math.max(0, backoff);
+                    // respect both rate limiter backoff and desired rate
+                    nextAttempt = Math.max(afterDesired, afterBackoff);
+                } else {
+                    // hammer mode: ignore retryAfter and keep pushing at the desired rate
+                    nextAttempt = afterDesired;
+                }
             }
         }
 

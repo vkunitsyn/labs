@@ -32,8 +32,8 @@ The tests specify the expected behavior. In particular:
 ## Concurrency
 
 Implementations are **thread-safe**: all state mutations are guarded by
-intrinsic locking (i.e., `synchronized`), so callers may use a single limiter
-instance from multiple threads.
+intrinsic locking (`synchronized`), prioritizing correctness and clarity
+over lock-free optimizations.
 
 ---
 
@@ -61,12 +61,14 @@ Java formatting is enforced via Spotless:
 
 Run:
 
-`./gradlew run`
+Run:
+- `./gradlew run` — client that respects retry-after delays
+- `./gradlew run --args="--hammer"` — client that issues requests at a fixed high rate
 
 It demonstrates:
 - burst handling
 - steady high-QPS traffic
-- rejection and retry behavior
+- rejection and retry-after behavior
 
 The demo is timing-dependent; the exact numbers may vary.
 
@@ -77,3 +79,4 @@ The demo is timing-dependent; the exact numbers may vary.
 - The code favors clarity over micro-optimizations
 - Time measurements rely on `System.nanoTime()`
 - External dependencies are kept minimal intentionally
+- Java formatting is enforced via Spotless (Java sources only)
