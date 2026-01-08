@@ -48,7 +48,7 @@ From this directory:
 
 ## Formatting
 
-Java formatting is enforced via Spotless:
+Java formatting is enforced via Spotless (Java sources only):
 
 - Check: `./gradlew spotlessCheck`
 - Apply: `./gradlew spotlessApply`
@@ -79,4 +79,3 @@ The demo is timing-dependent; the exact numbers may vary.
 - The code favors clarity over micro-optimizations
 - Time measurements rely on `System.nanoTime()`
 - External dependencies are kept minimal intentionally
-- Java formatting is enforced via Spotless (Java sources only)
