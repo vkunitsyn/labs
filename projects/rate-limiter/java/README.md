@@ -1,10 +1,9 @@
 [![Java RateLimiter CI](https://github.com/vkunitsyn/labs/actions/workflows/rate-limiter-java.yml/badge.svg)](https://github.com/vkunitsyn/labs/actions/workflows/rate-limiter-java.yml)
 # Rate Limiter (Java)
 
-This project is a small Java exploration of rate limiting techniques,
-with an emphasis on correctness, observable behavior, and test design.
+This project is a small Java exploration of rate limiting techniques, with an emphasis on **correctness**, **observable behavior**, and **test design**.
 
-It is intended as a learning example, not as a production-ready library.
+It is intended as a learning project, not as a production-ready library.
 
 ---
 
@@ -20,16 +19,6 @@ and are exercised through the same set of tests.
 
 ---
 
-## Behavioral guarantees
-
-The tests specify the expected behavior. In particular:
-
-- `availableTokens()` is never negative
-- `retryAfter()` is never negative
-- time behavior is monotonic (based on `System.nanoTime()`)
-
----
-
 ## Concurrency
 
 Implementations are **thread-safe**: all state mutations are guarded by
@@ -38,40 +27,62 @@ over lock-free optimizations.
 
 ---
 
-## Build & test
+## Testing
 
-From this directory:
+Tests specify the expected behavior (contract + invariants):
 
-- Run tests: `./gradlew test`
-- Run verification (includes formatting checks): `./gradlew check`
+- deterministic JUnit tests for concrete scenarios and boundary conditions
+- property-based tests (jqwik) to enforce invariants over many generated inputs
 
----
+Key invariants:
 
-## Formatting
+- `availableTokens()` is never negative
+- `retryAfter()` is never negative
 
-Java formatting is enforced via Spotless (Java sources only):
-
-- Check: `./gradlew spotlessCheck`
-- Apply: `./gradlew spotlessApply`
+Code formatting is enforced via **Spotless** during the build.
 
 ---
 
-## Demo
+## Build, test & demo
 
-`io.github.vkunitsyn.RateLimiterDemo`
+### Run all tests
 
-Run:
+```bash
+./gradlew test
+```
 
-Run:
-- `./gradlew run` — client that respects retry-after delays
-- `./gradlew run --args="--hammer"` — client that issues requests at a fixed high rate
+### Run the demo
 
-It demonstrates:
-- burst handling
-- steady high-QPS traffic
-- rejection and retry-after behavior
+The demo illustrates burst vs steady-state behavior for different limiter implementations.
 
-The demo is timing-dependent; the exact numbers may vary.
+```bash
+./gradlew run
+```
+
+The demo supports command-line flags:
+
+- `--algo=token|spacing|fixed|sliding` selects the algorithm
+- `--hammer` (alias: `--ignore-retry-after`) makes the client ignore `retryAfter()` and keep pushing at the target QPS
+
+Examples:
+
+```bash
+# default: polite client + token bucket
+./gradlew run
+
+# choose algorithm
+./gradlew run --args='--algo=spacing'
+./gradlew run --args='--algo=fixed'
+./gradlew run --args='--algo=sliding'
+
+# hammer mode (ignore retryAfter)
+./gradlew run --args='--algo=spacing --hammer'
+./gradlew run --args='--algo=token --ignore-retry-after'
+```
+
+`--hammer` changes the steady-load part of the demo to behave like a load generator (ignore `retryAfter()`).
+
+Demo source: `src/main/java/.../RateLimiterDemo.java`. Limiter selection and scenarios are defined explicitly in the demo code for clarity.
 
 ---
 

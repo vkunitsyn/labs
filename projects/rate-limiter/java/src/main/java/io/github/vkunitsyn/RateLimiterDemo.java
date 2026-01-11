@@ -2,14 +2,20 @@ package io.github.vkunitsyn;
 
 import io.github.vkunitsyn.ratelimiter.FixedWindowCounter;
 import io.github.vkunitsyn.ratelimiter.RateLimiter;
+import io.github.vkunitsyn.ratelimiter.SlidingWindowLog;
+import io.github.vkunitsyn.ratelimiter.SpacingLeakyBucket;
+import io.github.vkunitsyn.ratelimiter.TokenBucket;
 import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 public final class RateLimiterDemo {
 
     public static void main(String[] args) throws Exception {
-        // When true, we behave like a polite client: respect retryAfter() (e.g., HTTP 429 Retry-After).
-        // When false, we behave like a load generator: always attempt at targetQps, ignoring retryAfter.
+        // When true, we behave like a polite client: respect retryAfter() (e.g., HTTP
+        // 429 Retry-After).
+        // When false, we behave like a load generator: always attempt at targetQps,
+        // ignoring retryAfter.
         boolean respectRetryAfter = true;
         for (String arg : args) {
             if ("--hammer".equals(arg) || "--ignore-retry-after".equals(arg)) {
@@ -17,26 +23,12 @@ public final class RateLimiterDemo {
             }
         }
 
-        RateLimiter limiter;
-        // limiter = new TokenBucket(
-        // 10, // capacity
-        // 1, // refillTokens
-        // Duration.ofMillis(100).toNanos() // refillPeriod => 10 tokens/sec
-        // );
+        Supplier<RateLimiter> factory = selectFactory(args);
 
-        // limiter = new SpacingLeakyBucket(
-        //         10, // maxBurst
-        //         Duration.ofMillis(100).toNanos() // interval => 10 permits/sec
-        // );
-
-        limiter = new FixedWindowCounter(
-                10, // rate
-                Duration.ofMillis(1000).toNanos() // window => 10 permits/sec
-                );
-
-        burstDemo(limiter);
         System.out.println();
-        steadyDemo(limiter, 50, Duration.ofSeconds(5), respectRetryAfter); // 50 qps for 5s
+        burstDemo(factory.get());
+        System.out.println();
+        steadyDemo(factory.get(), 50, Duration.ofSeconds(5), respectRetryAfter); // 50 qps for 5s
     }
 
     private static void burstDemo(RateLimiter limiter) {
@@ -75,6 +67,9 @@ public final class RateLimiterDemo {
 
         int ok = 0, reject = 0;
         long totalSleepNanos = 0;
+        long sumBackoff = 0;
+        long maxBackoff = 0;
+        long backoffWins = 0;
 
         System.out.println("== steadyDemo ==");
         System.out.println("clientMode=" + (respectRetryAfter ? "POLITE" : "HAMMER"));
@@ -107,8 +102,12 @@ public final class RateLimiterDemo {
                 long afterDesired = base + intervalNanos;
 
                 if (respectRetryAfter) {
-                    long backoff = r.retryAfterNanos();
-                    long afterBackoff = base + Math.max(0, backoff);
+                    long backoff = Math.max(0L, r.retryAfterNanos());
+                    sumBackoff += backoff;
+                    maxBackoff = Math.max(maxBackoff, backoff);
+                    long afterBackoff = base + backoff;
+                    if (afterBackoff > afterDesired) backoffWins++;
+
                     // respect both rate limiter backoff and desired rate
                     nextAttempt = Math.max(afterDesired, afterBackoff);
                 } else {
@@ -126,5 +125,59 @@ public final class RateLimiterDemo {
         System.out.println("total=" + (ok + reject) + " ok=" + ok + " rejected=" + reject);
         System.out.printf("attemptQps=%.1f okQps=%.1f rejectRate=%.1f%%%n", attemptQps, okQps, rejectRate);
         System.out.println("avgPaceSleep(ms)=" + (totalSleepNanos / 1_000_000.0) / Math.max(1, (ok + reject)));
+        if (respectRetryAfter && reject > 0) {
+            System.out.println("avgBackoff(ms)=" + (sumBackoff / 1_000_000.0) / reject);
+            System.out.println("maxBackoff(ms)=" + (maxBackoff / 1_000_000.0));
+            System.out.println("backoffWins=" + backoffWins + "/" + reject);
+        }
+    }
+
+    private static Supplier<RateLimiter> selectFactory(String[] args) {
+        String algo = "token"; // default
+        for (String arg : args) {
+            if (arg.startsWith("--algo=")) {
+                algo = arg.substring("--algo=".length());
+            }
+        }
+
+        return switch (algo) {
+            case "fixed" -> fixedWindowCounter();
+            case "token" -> tokenBucket();
+            case "spacing" -> spacingLeakyBucket();
+            case "sliding" -> slidingWindowLog();
+            default -> throw new IllegalArgumentException("Unknown --algo=" + algo);
+        };
+    }
+
+    private static Supplier<RateLimiter> fixedWindowCounter() {
+        System.out.println("FixedWindowCounter");
+        long rate = 10;
+        long window = Duration.ofSeconds(1).toNanos(); // 10 permits/sec
+        return () -> new FixedWindowCounter(rate, window);
+    }
+
+    private static Supplier<RateLimiter> tokenBucket() {
+        System.out.println("TokenBucket");
+        return () -> new TokenBucket(
+                10, // capacity
+                1, // refillTokens
+                Duration.ofMillis(100).toNanos() // refillPeriod => 10 tokens/sec
+                );
+    }
+
+    private static Supplier<RateLimiter> spacingLeakyBucket() {
+        System.out.println("SpacingLeakyBucket");
+        return () -> new SpacingLeakyBucket(
+                10, // maxBurst
+                Duration.ofMillis(100).toNanos() // interval => 10 permits/sec
+                );
+    }
+
+    private static Supplier<RateLimiter> slidingWindowLog() {
+        System.out.println("SlidingWindowLog");
+        return () -> new SlidingWindowLog(
+                10, // rate
+                Duration.ofSeconds(1).toNanos() // window => 10 permits/sec
+                );
     }
 }
