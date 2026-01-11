@@ -69,4 +69,41 @@ class RateLimiterPropertiesTest {
             assertThat(limiter.tryAcquire(t, permits).isAcquired()).isTrue();
         }
     }
+
+    @Property(tries = 500)
+    void slidingWindowLog_invariantsHold(
+            @ForAll @LongRange(min = 0, max = 1_000_000_000_000L) long baseTime,
+            @ForAll @IntRange(min = 0, max = 100) int burstAttempts,
+            @ForAll @LongRange(min = 0, max = 5_000_000_000L) long laterNanos,
+            @ForAll @IntRange(min = 1, max = 10) int permits) {
+
+        long rate = 10;
+        long window = Duration.ofSeconds(1).toNanos();
+        RateLimiter limiter = new SlidingWindowLog(rate, window);
+
+        long t0 = baseTime;
+
+        // Generate a burst at the same timestamp.
+        for (int i = 0; i < burstAttempts; i++) {
+            limiter.tryAcquire(t0, 1);
+        }
+
+        long t = Utils.saturatedAdd(t0, laterNanos);
+
+        long available = limiter.availableTokens(t);
+        assertThat(available).isBetween(0L, rate);
+
+        long ra = limiter.retryAfterNanos(t, permits);
+        assertThat(ra).isGreaterThanOrEqualTo(0L);
+
+        // If limiter predicts "can acquire now", it must succeed.
+        if (ra == 0L) {
+            assertThat(limiter.tryAcquire(t, permits).isAcquired()).isTrue();
+        }
+
+        // If we have enough available tokens, retryAfter must be 0.
+        if (permits <= available) {
+            assertThat(ra).isZero();
+        }
+    }
 }

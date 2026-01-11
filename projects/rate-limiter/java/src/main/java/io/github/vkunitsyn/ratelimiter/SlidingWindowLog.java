@@ -1,24 +1,27 @@
 package io.github.vkunitsyn.ratelimiter;
 
-public class FixedWindowCounter implements RateLimiter {
-    private final long rate;
-    private final long windowSizeNanos;
-    private long lastWindowTimeNanos;
-    private long remainingPermitsInWindow;
+import java.util.LinkedList;
 
-    public FixedWindowCounter(long rate, long windowSizeNanos) {
+public class SlidingWindowLog implements RateLimiter {
+    private final long rate;
+    private final LinkedList<Long> log;
+    private final long windowSizeNanos;
+
+    public SlidingWindowLog(long rate, long windowSizeNanos) {
         validateInitialParameters(rate, windowSizeNanos);
         this.rate = rate;
+        this.log = new LinkedList<>();
         this.windowSizeNanos = windowSizeNanos;
-        this.lastWindowTimeNanos = Long.MIN_VALUE;
     }
 
     @Override
     public synchronized AcquireResult tryAcquire(long nowNanos, long permits) {
         validatePermits(permits);
-        recalculateWindowAndPermits(nowNanos);
-        if (remainingPermitsInWindow >= permits) {
-            remainingPermitsInWindow -= permits;
+        actualizeLog(nowNanos);
+        for (long i = 0; i < permits; i++) {
+            log.addLast(nowNanos); // By design we fill log even with rejected events
+        }
+        if (log.size() <= rate) {
             return new AcquireResult.Acquired(permits);
         }
         return new AcquireResult.Rejected(retryAfterNanosInternal(nowNanos, permits));
@@ -26,29 +29,28 @@ public class FixedWindowCounter implements RateLimiter {
 
     @Override
     public synchronized long availableTokens(long nowNanos) {
-        recalculateWindowAndPermits(nowNanos);
-        return remainingPermitsInWindow;
+        actualizeLog(nowNanos);
+        long availableTokens = rate - log.size();
+        return Math.max(0, availableTokens);
     }
 
     @Override
     public synchronized long retryAfterNanos(long nowNanos, long permits) {
         validatePermits(permits);
-        recalculateWindowAndPermits(nowNanos);
+        actualizeLog(nowNanos);
         return retryAfterNanosInternal(nowNanos, permits);
     }
 
     private long retryAfterNanosInternal(long nowNanos, long permits) {
-        if (remainingPermitsInWindow >= permits) {
+        long available = rate - log.size();
+        if (available >= permits) {
             return 0;
         }
 
-        long nextWindowTimeNanos = Utils.saturatedAdd(lastWindowTimeNanos, windowSizeNanos);
-        if (nextWindowTimeNanos <= nowNanos) {
-            return 0;
-        }
-
-        long delayNanos = nextWindowTimeNanos - nowNanos;
-        return Math.max(0, delayNanos);
+        long deficit = permits - available;
+        long nextAvailableWindowStartNanos = log.get((int) deficit - 1);
+        long nextAvailableWindowEndNanos = Utils.saturatedAdd(nextAvailableWindowStartNanos, windowSizeNanos);
+        return Math.max(0, nextAvailableWindowEndNanos - nowNanos);
     }
 
     private void validatePermits(long permits) {
@@ -60,21 +62,13 @@ public class FixedWindowCounter implements RateLimiter {
         }
     }
 
-    private void recalculateWindowAndPermits(long nowNanos) {
-        if (lastWindowTimeNanos == Long.MIN_VALUE) {
-            remainingPermitsInWindow = rate;
-            lastWindowTimeNanos = nowNanos - Math.floorMod(nowNanos, windowSizeNanos);
-            return;
+    private void actualizeLog(long nowNanos) {
+        if (log.isEmpty() || nowNanos < log.getLast()) {
+            return; // just ignore non-monotonic nowNanos
         }
-
-        if (nowNanos <= lastWindowTimeNanos) {
-            return;
-        }
-
-        long currentWindowStartNanos = nowNanos - Math.floorMod(nowNanos, windowSizeNanos);
-        if (currentWindowStartNanos > lastWindowTimeNanos) {
-            remainingPermitsInWindow = rate;
-            lastWindowTimeNanos = currentWindowStartNanos;
+        long currentWindowStartNanos = Utils.saturatedAdd(nowNanos, -windowSizeNanos);
+        while (!log.isEmpty() && log.getFirst() < currentWindowStartNanos) {
+            log.removeFirst();
         }
     }
 

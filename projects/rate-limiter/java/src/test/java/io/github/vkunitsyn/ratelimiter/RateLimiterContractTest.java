@@ -8,10 +8,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class RateLimiterContractTest {
-
     static Stream<RateLimiter> limiters() {
         long period = Duration.ofMillis(100).toNanos();
-        return Stream.of(new TokenBucket(10, 1, period), new SpacingLeakyBucket(10, period));
+        return Stream.of(
+                new TokenBucket(10, 1, period),
+                new SpacingLeakyBucket(10, period),
+                new FixedWindowCounter(10, period),
+                new SlidingWindowLog(10, period));
     }
 
     @ParameterizedTest

@@ -38,6 +38,7 @@ class RateLimiterScenarioPropertiesTest {
     // Shared test configuration (matches demo defaults)
     private static final long CAPACITY = 10;
     private static final long PERIOD_NANOS = Duration.ofMillis(100).toNanos(); // 10 permits/sec
+    private static final long WINDOW_NANOS = Duration.ofSeconds(1).toNanos(); // for SlidingWindowLog
 
     /**
      * Provides randomized but realistic scenarios: - Mostly Acquire steps (like load) - Sometimes
@@ -79,6 +80,11 @@ class RateLimiterScenarioPropertiesTest {
         runScenarioAndAssertInvariants("FixedWindowCounter", limiter, steps, CAPACITY);
     }
 
+    @Property(tries = 200)
+    void slidingWindowLog_scenarios_hold_invariants(@ForAll("scenarios") List<Step> steps) {
+        RateLimiter limiter = new SlidingWindowLog(CAPACITY, WINDOW_NANOS);
+        runScenarioAndAssertInvariants("SlidingWindowLog", limiter, steps, CAPACITY);
+    }
     /**
      * The core scenario runner.
      *

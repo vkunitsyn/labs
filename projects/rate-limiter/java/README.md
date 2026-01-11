@@ -13,6 +13,7 @@ It is intended as a learning example, not as a production-ready library.
 - Token Bucket
 - Spacing (Leaky) Bucket
 - Fixed Window Counter
+- Sliding Window Log
 
 All implementations share a common `RateLimiter` interface
 and are exercised through the same set of tests.
